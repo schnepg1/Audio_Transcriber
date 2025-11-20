@@ -52,7 +52,7 @@ export const transcribeAudio = async (audioFile: File): Promise<string> => {
     };
 
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17', // This model supports multimodal inputs
+      model: 'gemini-2.5-flash',
       contents: { parts: [audioPart, textPromptPart] },
     });
     

@@ -1,26 +1,49 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { AudioUploader } from './components/AudioUploader';
 import { TranscriptionDisplay } from './components/TranscriptionDisplay';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
+import { HistoryList } from './components/HistoryList';
 import { transcribeAudio as callTranscribeAudio } from './services/geminiService';
-import { FileAudio, UploadCloud, AlertTriangle } from 'lucide-react'; // Using lucide-react for icons
+import { TranscriptionRecord } from './types';
 
-// Ensure lucide-react is available, if not, use SVGs or remove icons.
-// For this example, assuming lucide-react could be added or replaced with SVGs.
-// If direct SVG is preferred, replace <FileAudio />, <UploadCloud />, etc. with actual SVG code.
+const STORAGE_KEY = 'audio_transcriber_history';
 
 const App: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [transcription, setTranscription] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Initialize history from localStorage lazily to avoid overwriting data on initial render
+  const [history, setHistory] = useState<TranscriptionRecord[]>(() => {
+    if (typeof window !== 'undefined') {
+      const savedHistory = localStorage.getItem(STORAGE_KEY);
+      if (savedHistory) {
+        try {
+          return JSON.parse(savedHistory);
+        } catch (e) {
+          console.error("Failed to parse history from local storage", e);
+        }
+      }
+    }
+    return [];
+  });
+
+  // Save history to local storage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+  }, [history]);
 
   const handleFileSelect = useCallback((file: File | null) => {
     setSelectedFile(file);
-    setTranscription(''); // Clear previous transcription
-    setError(null); // Clear previous error
+    if (file) {
+        // Only clear transcription if we are actually selecting a new file
+        // If we are just resetting, we might want to keep the view
+        setTranscription('');
+    }
+    setError(null);
   }, []);
 
   const handleTranscribe = async () => {
@@ -36,6 +59,17 @@ const App: React.FC = () => {
     try {
       const result = await callTranscribeAudio(selectedFile);
       setTranscription(result);
+
+      // Add to history
+      const newRecord: TranscriptionRecord = {
+        id: Date.now().toString(),
+        fileName: selectedFile.name,
+        text: result,
+        timestamp: Date.now(),
+      };
+      
+      setHistory(prev => [newRecord, ...prev]);
+
     } catch (err: any) {
       console.error("Transcription error:", err);
       setError(err.message || "An unknown error occurred during transcription.");
@@ -44,9 +78,28 @@ const App: React.FC = () => {
     }
   };
 
+  const handleHistorySelect = (record: TranscriptionRecord) => {
+    setTranscription(record.text);
+    // We clear the file selection to indicate we are viewing a history item, 
+    // or we could technically mock a file object, but clearing avoids confusion.
+    setSelectedFile(null); 
+    setError(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleHistoryDelete = (id: string) => {
+    setHistory(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleHistoryClear = () => {
+    if (window.confirm('Are you sure you want to clear all transcription history?')) {
+      setHistory([]);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-4 selection:bg-sky-500 selection:text-white">
-      <div className="bg-slate-800 shadow-2xl rounded-xl p-6 md:p-10 w-full max-w-2xl space-y-8">
+      <div className="bg-slate-800 shadow-2xl rounded-xl p-6 md:p-10 w-full max-w-2xl space-y-8 my-8">
         <header className="text-center">
           <h1 className="text-4xl font-bold text-sky-400 flex items-center justify-center space-x-3">
             <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
@@ -90,6 +143,13 @@ const App: React.FC = () => {
           {transcription && !isLoading && (
             <TranscriptionDisplay text={transcription} />
           )}
+
+          <HistoryList 
+            history={history} 
+            onSelect={handleHistorySelect} 
+            onDelete={handleHistoryDelete}
+            onClear={handleHistoryClear}
+          />
         </main>
         
         <footer className="text-center text-xs text-slate-500 pt-6 border-t border-slate-700">
